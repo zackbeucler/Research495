@@ -1,0 +1,11 @@
+# Virtual enviroments
+
+.env
+.venv
+/tflite1-env
+tflite1-env/
+
+# Android folder
+
+/Android
+Android/

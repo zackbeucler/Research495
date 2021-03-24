@@ -9,7 +9,7 @@
 3. Check that the Camera option in the raspberry pi configuration menu is enabled
 4. Then, type `cd Desktop` to move to the Desktop folder
 4. Download this repo by typing `git clone https://github.com/zackbeucler/Research495.git`
-5. After the download finsihes, type `cd tflite1` to move to the TensorFlow folder
+5. After the download finsihes, type `mv Research495 tflite1 && cd tflite1` to move to the TensorFlow folder
 6. Then, type `sudo pip3 install virtualenv` to install virtual enviroments for Python3
 7. Next, create a virtual enviroment by typing `python3 -m venv tflite1-env` to create an enviroment called `tflite1-env`
 8. Start that enviroment by typing `source tflite1-env/bin/activate`

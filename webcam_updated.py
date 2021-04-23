@@ -22,9 +22,13 @@ import sys
 import time
 from threading import Thread
 import importlib.util
+from gpiozero import LED
 
-PEOPLE_COUNTER = 0
-isWORKSPACE_DIRTY = False
+
+Red_LED = LED(25)
+Red_LED.off()
+Green_LED = LED(23)
+Green_LED.off()
 
 # Define VideoStream class to handle streaming of video from webcam in separate processing thread
 # Source - Adrian Rosebrock, PyImageSearch: https://www.pyimagesearch.com/2015/12/28/increasing-raspberry-pi-fps-with-python-and-opencv/
@@ -49,7 +53,7 @@ class VideoStream:
         return self
 
     def update(self):
-        # Keep looping indefinitely until the thread is stopped
+                # Keep looping indefinitely until the thread is stopped
         while True:
             # If the camera is stopped, stop the thread
             if self.stopped:
@@ -67,8 +71,8 @@ class VideoStream:
     def stop(self):
 	# Indicate that the camera and thread should be stopped
         self.stopped = True
-
-# Define and parse input arguments
+    
+    # Define and parse input arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--modeldir', help='Folder the .tflite file is located in',
                     required=True)
@@ -110,7 +114,7 @@ else:
 if use_TPU:
     # If user has specified the name of the .tflite file, use that name, otherwise use default 'edgetpu.tflite'
     if (GRAPH_NAME == 'detect.tflite'):
-        GRAPH_NAME = 'edgetpu.tflite'       
+        GRAPH_NAME = 'edgetpu.tflite'
 
 # Get path to current working directory
 CWD_PATH = os.getcwd()
@@ -124,7 +128,7 @@ PATH_TO_LABELS = os.path.join(CWD_PATH,MODEL_NAME,LABELMAP_NAME)
 # Load the label map
 with open(PATH_TO_LABELS, 'r') as f:
     labels = [line.strip() for line in f.readlines()]
-
+    
 # Have to do a weird fix for label map if using the COCO "starter model" from
 # https://www.tensorflow.org/lite/models/object_detection/overview
 # First label is '???', which has to be removed.
@@ -161,6 +165,11 @@ freq = cv2.getTickFrequency()
 videostream = VideoStream(resolution=(imW,imH),framerate=30).start()
 time.sleep(1)
 
+status = {"dirty":False, "ready":False, "in_use":False}
+
+# TURN ON GREEN LED
+Green_LED.on()
+
 #for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
 while True:
 
@@ -189,12 +198,11 @@ while True:
     classes = interpreter.get_tensor(output_details[1]['index'])[0] # Class index of detected objects
     scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
     #num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
-    
-    Collection_of_detections = []
-    
+        
     circlex = 320
     circley = 240
     radius = 120
+    
     cv2.circle(frame, (circlex,circley), radius, (255, 0, 0), 5) # draw circle
     
     # Loop over all detections and draw detection box if confidence is above minimum threshold
@@ -209,7 +217,6 @@ while True:
             xmax = int(min(imW,(boxes[i][3] * imW)))
             ymax = int(ymax/1.25)
             
-            #cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
 
             # Draw label
             object_name = labels[int(classes[i])] # Look up object name from "labels" array using class index
@@ -218,13 +225,19 @@ while True:
                 
                 cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
                 midx,midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
-                cv2.circle(frame, (midx,midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoints
+                cv2.circle(frame, (midx,midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
                 midcoords = "%s %s" % (midx, midy)
                 #print("midpoint coordinates: ", midcoords)
                 
                 if radius >= int((((midx-circlex)**2) + ((midy-circley)**2))**0.5): # detect if midpoint of person is in circle
                     print("Person at workstation")
-                    isWORKSPACE_DIRTY = True
+                    status['in_use'] = True
+                    status['ready'] = False
+                else:
+                    if status['in_use']:
+                        status['dirty'] = True
+                        print("Workstation is dirty")
+                    status['in_use'] = False
                 
                 label = '%s: %d%%' % (object_name, int(scores[i]*100)) # Example: 'person: 72%'
                 labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
@@ -232,59 +245,73 @@ while True:
                 cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
                 
                 cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
-            
-                if object_name == 'person':
-                    Collection_of_detections.append(object_name) # collect all detected objects
 
     
-    if Collection_of_detections.count('person') != 0:
-        PEOPLE_COUNTER = Collection_of_detections.count('person')
-        #print("People Detected", PEOPLE_COUNTER)
-    
-    else:
-        PEOPLE_COUNTER = 0
-        if isWORKSPACE_DIRTY == True: # if there are no people in the room and the workspace is dirty
-            print("waiting")
-            time.sleep(60) # wait 60 seconds
-            
-            ###### MAYBE TURN THIS INTO A METHOD SO WE DONT REPEAT CODE??? ######
-            new_frame = videostream.read() # get 1 frame from camera and run detection
-                # Acquire frame and resize to expected shape [1xHxWx3]
-            adj_new_frame = new_frame.copy()
-            new_frame_rgb = cv2.cvtColor(adj_new_frame, cv2.COLOR_BGR2RGB)
-            new_frame_resized = cv2.resize(new_frame_rgb, (width, height))
-            new_input_data = np.expand_dims(new_frame_resized, axis=0)
-            # Normalize pixel values if using a floating model (i.e. if model is non-quantized)
-            if floating_model:
-                new_input_data = (np.float32(input_data) - input_mean) / input_std
-            # Perform the actual detection by running the model with the image as input
-            interpreter.set_tensor(input_details[0]['index'], new_input_data)
-            interpreter.invoke()
-            # get detection results
-            new_scores = interpreter.get_tensor(output_details[2]['index'])[0]
-            new_classes = interpreter.get_tensor(output_details[1]['index'])[0]
-            
-            
-            NEW_PERSON_DETECTED = False
-            # loop over detections and check if a person has entered
-            for i in range(len(new_scores)):
-                if ((new_scores[i] > min_conf_threshold) and (new_scores[i] <= 1.0) and (labels[int(classes[i])] == 'person')):
-                    print("Person has re-entered room")
-                    NEW_PERSON_DETECTED = True
-            
-            if NEW_PERSON_DETECTED == False:
-                print("Start Cleaning")
-                # clean for 6o seconds
-                isWORKSPACE_DIRTY = False
-                    
+   
+    if status['dirty'] and not status['in_use']:
+        print("waiting")
+        time.sleep(60) # wait 60 seconds
+        #for i in range(61):
+        #    time.sleep(1)
+        #    print(i)
+        
+        print("Checking for new person")
+        ###### MAYBE TURN THIS INTO A METHOD SO WE DONT REPEAT CODE??? ######
+        new_frame = videostream.read() # get 1 frame from camera and run detection
+            # Acquire frame and resize to expected shape [1xHxWx3]
+        adj_new_frame = new_frame.copy()
+        new_frame_rgb = cv2.cvtColor(adj_new_frame, cv2.COLOR_BGR2RGB)
+        new_frame_resized = cv2.resize(new_frame_rgb, (width, height))
+        new_input_data = np.expand_dims(new_frame_resized, axis=0)
+        # Normalize pixel values if using a floating model (i.e. if model is non-quantized)
+        if floating_model:
+            new_input_data = (np.float32(input_data) - input_mean) / input_std
+        # Perform the actual detection by running the model with the image as input
+        interpreter.set_tensor(input_details[0]['index'], new_input_data)
+        interpreter.invoke()
+        # get detection results
+        new_boxes = interpreter.get_tensor(output_details[0]['index'])[0] # Bounding box coordinates of detected objects
+        new_scores = interpreter.get_tensor(output_details[2]['index'])[0]
+        new_classes = interpreter.get_tensor(output_details[1]['index'])[0]
+        
+        
+        # loop over detections and check if a person has entered
+        for i in range(len(new_scores)):
+            if ((new_scores[i] > min_conf_threshold) and (new_scores[i] <= 1.0) and (labels[int(classes[i])] == 'person')):
+                print("Person has re-entered room")
+                
+                ymin = int(max(1,(new_boxes[i][0] * imH)))
+                xmin = int(max(1,(new_boxes[i][1] * imW)))
+                ymax = int(min(imH,(new_boxes[i][2] * imH)))
+                xmax = int(min(imW,(new_boxes[i][3] * imW)))
+                ymax = int(ymax/1.25)
+                
+                new_midx,new_midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
+                cv2.circle(frame, (new_midx,new_midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
 
-                    
 
+            # check if new person is at workstation
+            if radius >= int((((new_midx-circlex)**2) + ((new_midy-circley)**2))**0.5):
+                status['ready'] = False
+                status['in_use'] = True
+            else:
+                status['ready'] = True
         
-        
-        
-        
-        
+        if status['ready'] and status['dirty'] and not status['in_use']:
+            print("Start Cleaning")
+            # TURN ON RED LED
+            Red_LED.on()
+            # TURN OFF GREEN LED
+            Green_LED.off()
+            # clean for 60 seconds
+            time.sleep(60)
+            print("Cleaning...")
+            status['dirty'] = False
+            status['ready'] = False
+            # TURN OFF RED LED
+            Red_LED.off()
+            # TURN ON GREEN LED
+            Green_LED.on()
     
     # Draw framerate in corner of frame
     cv2.putText(frame,'FPS: {0:.2f}'.format(frame_rate_calc),(30,50),cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,0),2,cv2.LINE_AA)
@@ -304,29 +331,3 @@ while True:
 # Clean up
 cv2.destroyAllWindows()
 videostream.stop()
-
-
-
-
-
-'''
-    present = True
-    
-    counter = 0
-        
-        if present == false
-            while counter < 60:
-                time.sleep(1) # wait 1 second
-                counter += 1
-                if Collection_of_detections.count('person') != 0:
-                    counter = 0
-            print("on")
-            while counter < 60:
-                time.sleep(1) # wait 1 second
-                counter += 1
-                if Collection_of_detections.count('person') != 0:
-                    print("off")
-                    present = True
-                    counter = 60
-'''
-

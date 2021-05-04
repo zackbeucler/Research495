@@ -1,6 +1,7 @@
 # How to run program for COM495 on a Raspberry Pi
 
 [Tutorial Video Link](https://www.youtube.com/watch?v=aimSGOAUI8Y)
+
 [Tutorial Written Link](https://github.com/EdjeElectronics/TensorFlow-Lite-Object-Detection-on-Android-and-Raspberry-Pi/blob/master/Raspberry_Pi_Guide.md)
 
 ## First install
@@ -24,7 +25,7 @@
 
 1. Open terminal and type `cd Desktop/tflite1`
 2. Run the virtual enviroment by typing `source tflite1-env/bin/activate`
-3. Run the program by typing `python3 TFLite_detection_webcam.py --modeldir=Sample_TFLite_model`
+3. Run the program by typing `python3 webcam_updated.py --modeldir=Sample_TFLite_model`
 
 
 

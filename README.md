@@ -23,6 +23,12 @@
 2. Run the virtual enviroment by typing `source tflite1-env/bin/activate`
 3. Run the program by typing `python3 TFLite_detection_webcam.py --modeldir=Sample_TFLite_model`
 
+## Git stuff
+
+1. Add all files `git add .`
+2. Commit files `git commit -m "message here"`
+3. push files `git push origin main`
+
 
 
 Last updated: March 22, 2021

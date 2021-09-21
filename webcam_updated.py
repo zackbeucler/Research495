@@ -25,10 +25,12 @@ import importlib.util
 from gpiozero import LED
 
 
-Red_LED = LED(25)
+Red_LED = LED(24)
 Red_LED.off()
-Green_LED = LED(23)
+Green_LED = LED(25)
 Green_LED.off()
+LED_Strip = LED(26)
+LED_Strip.on()
 
 # Define VideoStream class to handle streaming of video from webcam in separate processing thread
 # Source - Adrian Rosebrock, PyImageSearch: https://www.pyimagesearch.com/2015/12/28/increasing-raspberry-pi-fps-with-python-and-opencv/
@@ -199,9 +201,9 @@ while True:
     scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
     #num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
         
-    circlex = 320
-    circley = 240
-    radius = 120
+    circlex = 640
+    circley = 500
+    radius = 200
     
     cv2.circle(frame, (circlex,circley), radius, (255, 0, 0), 5) # draw circle
     
@@ -250,7 +252,7 @@ while True:
    
     if status['dirty'] and not status['in_use']:
         print("waiting")
-        time.sleep(60) # wait 60 seconds
+        time.sleep(10) # wait 60 seconds
         #for i in range(61):
         #    time.sleep(1)
         #    print(i)
@@ -286,15 +288,14 @@ while True:
                 xmax = int(min(imW,(new_boxes[i][3] * imW)))
                 ymax = int(ymax/1.25)
                 
-                new_midx,new_midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
+                new_midx, new_midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
                 cv2.circle(frame, (new_midx,new_midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
-
-
-            # check if new person is at workstation
-            if radius >= int((((new_midx-circlex)**2) + ((new_midy-circley)**2))**0.5):
-                status['ready'] = False
-                status['in_use'] = True
+                if radius >= int((((new_midx-circlex)**2) + ((new_midy-circley)**2))**0.5):
+                    status['ready'] = False
+                    status['in_use'] = True
+                    
             else:
+            # check if new person is at workstation
                 status['ready'] = True
         
         if status['ready'] and status['dirty'] and not status['in_use']:
@@ -304,15 +305,19 @@ while True:
             # TURN OFF GREEN LED
             Green_LED.off()
             # clean for 60 seconds
-            time.sleep(60)
             print("Cleaning...")
+            LED_Strip.off()
+            time.sleep(10)
+            
             status['dirty'] = False
             status['ready'] = False
             # TURN OFF RED LED
             Red_LED.off()
             # TURN ON GREEN LED
             Green_LED.on()
-    
+            
+            LED_Strip.on()
+            
     # Draw framerate in corner of frame
     cv2.putText(frame,'FPS: {0:.2f}'.format(frame_rate_calc),(30,50),cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,0),2,cv2.LINE_AA)
 

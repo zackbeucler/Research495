@@ -34,4 +34,4 @@
 - `webcam_updated2.py` is the code we are working on this semester for multiple workstations
 - `workstation.py` contains the workstation class
 
-Last updated: March 22, 2021
+Last updated: October 5, 2021

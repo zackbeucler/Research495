@@ -29,6 +29,9 @@
 2. Commit files `git commit -m "message here"`
 3. push files `git push origin main`
 
-
+## File info
+- `webcam_updated.py` is the final code from last semester where we only had a single work station
+- `webcam_updated2.py` is the code we are working on this semester for multiple workstations
+- `workstation.py` contains the workstation class
 
 Last updated: March 22, 2021

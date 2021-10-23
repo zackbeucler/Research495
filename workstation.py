@@ -3,7 +3,7 @@ import time
 
 class Workstation(threading.Thread):    
   def __init__(self, i):
-    threading.Thread.__init__(self,name='wk'+str(i))
+    #threading.Thread.__init__(self,name='wk'+str(i))
     self.number = i  #workstation number
     self.active = False   #When UV-C strip is on
     self.in_use = False     #The person is using the workstation or not
@@ -13,8 +13,7 @@ class Workstation(threading.Thread):
     
   #will sanitize when the workstation is ready
   def run(self):
-    for thread in threading.enumerate():
-        print(thread.name)
+
     if self.ready:
       self.active = True
       

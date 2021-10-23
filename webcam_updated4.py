@@ -24,8 +24,7 @@ import threading
 from threading import *
 import importlib.util
 from gpiozero import LED
-#from workstation import Workstation
-from workstation2 import Workstation
+from workstation3 import Workstation
 
 #GPIO pins 
 Red_LED = LED(24)
@@ -46,9 +45,11 @@ class VideoStream:
         ret = self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         ret = self.stream.set(3,resolution[0])
         ret = self.stream.set(4,resolution[1])
+            
         # Read first frame from the stream
         (self.grabbed, self.frame) = self.stream.read()
-        # Variable to control when the camera is stopped
+
+	# Variable to control when the camera is stopped
         self.stopped = False
 
     def start(self):
@@ -76,14 +77,13 @@ class VideoStream:
 	# Indicate that the camera and thread should be stopped
         self.stopped = True
 
-MODEL_NAME = "Sample_TFLite_model"
+MODEL_NAME = 'Sample_TFLite_model'
 GRAPH_NAME = 'detect.tflite'
 LABELMAP_NAME = 'labelmap.txt'
 min_conf_threshold = 0.5
 resW, resH = '1280x720'.split('x')
 imW, imH = int(resW), int(resH)
 use_TPU = True
-
 # Import TensorFlow libraries
 # If tflite_runtime is installed, import interpreter from tflite_runtime, else import from regular tensorflow
 # If using Coral Edge TPU, import the load_delegate library
@@ -158,51 +158,43 @@ time.sleep(1)
 # TURN ON GREEN LED
 Green_LED.on()
 ws1 = Workstation(1)
-ws1.start()
-#for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
+
 while True:
-    
     # Start timer (for calculating frame rate)
     t1 = cv2.getTickCount()
-
     # Grab frame from video stream
     frame1 = videostream.read()
-
     # Acquire frame and resize to expected shape [1xHxWx3]
     frame = frame1.copy()
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame_resized = cv2.resize(frame_rgb, (width, height))
     input_data = np.expand_dims(frame_resized, axis=0)
-
     # Normalize pixel values if using a floating model (i.e. if model is non-quantized)
     if floating_model:
         input_data = (np.float32(input_data) - input_mean) / input_std
-
     # Perform the actual detection by running the model with the image as input
     interpreter.set_tensor(input_details[0]['index'], input_data)
     interpreter.invoke()
-
     # Retrieve detection results
     boxes = interpreter.get_tensor(output_details[0]['index'])[0] # Bounding box coordinates of detected objects
     classes = interpreter.get_tensor(output_details[1]['index'])[0] # Class index of detected objects
     scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
-    #num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed
-
+    #num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
 
     #new
     #Workstation 1
     circlex1 = 640
     circley1 = 500
-    radius = 200
+    radius = 120
     
     cv2.circle(frame, (circlex1,circley1), radius, (255, 0, 0), 5) # draw circle
     
     #Workstation 2
-    #circlex2 = 850
-    #circley2 = 700
+    circlex2 = 850
+    circley2 = 700
     
     #cv2.circle(frame, (circlex2,circley2), radius, (255, 0, 0), 5) # draw circle
-    
+    object_name = 'nothing detected' #this updates object_name so that it doesn't stay 'person' all the time and mess up things
     
     # Loop over all detections and draw detection box if confidence is above minimum threshold
     for i in range(len(scores)):
@@ -219,6 +211,7 @@ while True:
 
             # Draw label
             object_name = labels[int(classes[i])] # Look up object name from "labels" array using class index
+            # here it's not updating the 'person' label to null or anyother variable so it doesn't go to the else statement
             
             if object_name == 'person':
                 
@@ -226,20 +219,17 @@ while True:
                 midx,midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
                 cv2.circle(frame, (midx,midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
                 midcoords = "%s %s" % (midx, midy)
-
-
+                #print("midpoint coordinates: ", midcoords)
+                
                 #Checking for workstation 1
                 if radius >= int((((midx-circlex1)**2) + ((midy-circley1)**2))**0.5): # detect if midpoint of person is in circle
                     print("Person at workstation")
-                    ws1.update("in_use", True) #method update(dirty,ready,in_use,re_enter) has all boolean variables
+                    ws1.update("in_use", True) # method update(dirty,ready,in_use,re_enter) has all boolean variables
                     ws1.update('ready',False)
-                    print(ws1.getAllStatus())
-                else:
-                    if ws1.getStatus('in_use'):
-                        print('helllooooooo?')
-                        ws1.update('dirty', True)
-                        print("Workstation is dirty")
-                    ws1.update('in_use',False)
+                    ws1.update('waited', False)
+                    #ws1.update('dirty', True) # here maybe add another function that times how long the person uses the wks
+                    ws1Stat= ws1.getAllStatus()
+                    print(ws1Stat)
                     
                 
                 label = '%s: %d%%' % (object_name, int(scores[i]*100)) # Example: 'person: 72%'
@@ -248,57 +238,49 @@ while True:
                 cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
                 
                 cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
+            
+        if object_name != 'person' and ws1.getStatus('in_use'):
+            print("Workstation is dirty")
+            ws1.update('dirty', True)
+            ws1.update('in_use',False)
+        #object_name = 'null'
+                
 
         
-        if ws1.getStatus('dirty') and not ws1.getStatus('in_use'):
-            ws1.check()
-            ###### MAYBE TURN THIS INTO A METHOD SO WE DONT REPEAT CODE??? ######
-            new_frame = videostream.read() # get 1 frame from camera and run detection
-                # Acquire frame and resize to expected shape [1xHxWx3]
-            adj_new_frame = new_frame.copy()
-            new_frame_rgb = cv2.cvtColor(adj_new_frame, cv2.COLOR_BGR2RGB)
-            new_frame_resized = cv2.resize(new_frame_rgb, (width, height))
-            new_input_data = np.expand_dims(new_frame_resized, axis=0)
-        # Normalize pixel values if using a floating model (i.e. if model is non-quantized)
-            if floating_model:
-                new_input_data = (np.float32(input_data) - input_mean) / input_std
-            # Perform the actual detection by running the model with the image as input
-            interpreter.set_tensor(input_details[0]['index'], new_input_data)
-            interpreter.invoke()
-            # get detection results
-            new_boxes = interpreter.get_tensor(output_details[0]['index'])[0] # Bounding box coordinates of detected objects
-            new_scores = interpreter.get_tensor(output_details[2]['index'])[0]
-            new_classes = interpreter.get_tensor(output_details[1]['index'])[0]
+        if ws1.getStatus('dirty') and not ws1.getStatus('in_use') and not ws1.getStatus('active') and not ws1.getStatus('in_wait') and not ws1.getStatus('waited'):
+            ws1Thread_wait = Thread(target=ws1.wait)
+            ws1Thread_wait.start() # start the tread
+            #ws1.waitThread()
         
-        
-            # loop over detections and check if a person has entered
-            for i in range(len(new_scores)):
-                if ((new_scores[i] > min_conf_threshold) and (new_scores[i] <= 1.0) and (labels[int(classes[i])] == 'person')):
+        # loop over detections and check if a person has entered
+        if ws1.getStatus('waited'): # we should not go through this for loop while it's waiting for a person to re-enter 
+            ws1.update('ready',True)
+            for i in range(len(scores)):
+                if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0) and (labels[int(classes[i])] == 'person')):
                     print("Person has re-entered room")
-                    
-                    ymin = int(max(1,(new_boxes[i][0] * imH)))
-                    xmin = int(max(1,(new_boxes[i][1] * imW)))
-                    ymax = int(min(imH,(new_boxes[i][2] * imH)))
-                    xmax = int(min(imW,(new_boxes[i][3] * imW)))
+                    ymin = int(max(1,(boxes[i][0] * imH)))
+                    xmin = int(max(1,(boxes[i][1] * imW)))
+                    ymax = int(min(imH,(boxes[i][2] * imH)))
+                    xmax = int(min(imW,(boxes[i][3] * imW)))
                     ymax = int(ymax/1.25)
 
                     #what if we don't have new mid?
-                    print("ymin coord is " + str(ymin))
-                    new_midx, new_midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
-                    cv2.circle(frame, (new_midx,new_midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
+                    midx, midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
+                    cv2.circle(frame, (midx,midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
                         
-                    if radius >= int((((new_midx-circlex1)**2) + ((new_midy-circley1)**2))**0.5):
+                    #print(midx)
+                    if radius >= int((((midx-circlex1)**2) + ((midy-circley1)**2))**0.5):
                         ws1.update('ready',False)
                         ws1.update('in_use',True)
-                            
-                else:
-                # check if new person is at workstation
-                    ws1.update('ready',True)
-                    
-            if ws1.getStatus('ready') and ws1.getStatus('dirty') and not ws1.getStatus('in_use'):
-                ws1.run()
+                        ws1.update('dirty',True)
+                        
+                             
                 
+                            
 
+        if ws1.getStatus('ready') and ws1.getStatus('dirty') and not ws1.getStatus('in_use') and not ws1.getStatus('in_wait') and ws1.getStatus('waited') and not ws1.getStatus('active'):
+            ws1Thread_clean = Thread(target=ws1.clean)
+            ws1Thread_clean.start()
         
             
     
@@ -316,42 +298,10 @@ while True:
     # Press 'q' to quit
     if cv2.waitKey(1) == ord('q'):
         break
+    
+    print(ws1.getAllStatus())
 
 # Clean up
 cv2.destroyAllWindows()
 videostream.stop()
 
-
-
-
-
-
-
-
-
-
-"""
-    # Define and parse input arguments
-parser = argparse.ArgumentParser()
-parser.add_argument('--modeldir', help='Folder the .tflite file is located in',
-                    required=True)
-parser.add_argument('--graph', help='Name of the .tflite file, if different than detect.tflite',
-                    default='detect.tflite')
-parser.add_argument('--labels', help='Name of the labelmap file, if different than labelmap.txt',
-                    default='labelmap.txt')
-parser.add_argument('--threshold', help='Minimum confidence threshold for displaying detected objects',
-                    default=0.5)
-parser.add_argument('--resolution', help='Desired webcam resolution in WxH. If the webcam does not support the resolution entered, errors may occur.',
-                    default='1280x720')
-parser.add_argument('--edgetpu', help='Use Coral Edge TPU Accelerator to speed up detection',
-                    action='store_true')
-
-args = parser.parse_args()
-MODEL_NAME = args.modeldir
-GRAPH_NAME = args.graph
-LABELMAP_NAME = args.labels
-min_conf_threshold = float(args.threshold)
-resW, resH = args.resolution.split('x')
-imW, imH = int(resW), int(resH)
-use_TPU = args.edgetpu
-"""

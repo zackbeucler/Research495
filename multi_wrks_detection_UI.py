@@ -1,0 +1,459 @@
+######## Webcam Object Detection Using Tensorflow-trained Classifier #########
+#
+# Author: Evan Juras
+# Date: 10/27/19
+# Description: 
+# This program uses a TensorFlow Lite model to perform object detection on a live webcam
+# feed. It draws boxes and scores around the objects of interest in each frame from the
+# webcam. To improve FPS, the webcam object runs in a separate thread from the main program.
+# This script will work with either a Picamera or regular USB webcam.
+#
+# This code is based off the TensorFlow Lite image classification example at:
+# https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/examples/python/label_image.py
+#
+# I added my own method of drawing boxes and labels using OpenCV.
+
+# Import packages
+import os
+import argparse
+import cv2
+import numpy as np
+import sys
+import time
+import threading
+from threading import *
+import importlib.util
+from workstation import Workstation
+from graphics import *
+from button import *
+from picamera import *
+from PIL import Image
+
+
+
+# Define VideoStream class to handle streaming of video from webcam in separate processing thread
+# Source - Adrian Rosebrock, PyImageSearch: https://www.pyimagesearch.com/2015/12/28/increasing-raspberry-pi-fps-with-python-and-opencv/
+class VideoStream:
+    """Camera object that controls video streaming from the Picamera"""
+    def __init__(self,resolution=(640,480),framerate=30):
+        # Initialize the PiCamera and the camera image stream
+        self.stream = cv2.VideoCapture(0)
+        ret = self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        ret = self.stream.set(3,resolution[0])
+        ret = self.stream.set(4,resolution[1])
+            
+        # Read first frame from the stream
+        (self.grabbed, self.frame) = self.stream.read()
+
+	# Variable to control when the camera is stopped
+        self.stopped = False
+
+    def start(self):
+	# Start the thread that reads frames from the video stream
+        Thread(target=self.update,args=()).start()
+        return self
+
+    def update(self):
+                # Keep looping indefinitely until the thread is stopped
+        while True:
+            # If the camera is stopped, stop the thread
+            if self.stopped:
+                # Close camera resources
+                self.stream.release()
+                return
+
+            # Otherwise, grab the next frame from the stream
+            (self.grabbed, self.frame) = self.stream.read()
+
+    def read(self):
+	# Return the most recent frame
+        return self.frame
+
+    def stop(self):
+	# Indicate that the camera and thread should be stopped
+        self.stopped = True
+
+win = GraphWin("User Interface", 700,700)
+win.setBackground(color_rgb(0,0,0))
+
+win.setCoords(0,0,100,100)
+
+title = Text(Point(50,70),"Automatic sanitization")
+title.setSize(30)
+title.setFill(color_rgb(0,255,200))
+title.setFace("courier")
+title.setStyle("bold")
+title.draw(win)
+
+wksText = Text(Point(25,25),"# of workstations")
+wksText.setSize(15)
+wksText.setFill(color_rgb(0,255,200))
+wksText.setFace("courier")
+wksText.setStyle("bold")
+camera = PiCamera()
+
+
+#background = Image(Point(50,50),"/Users/yurockheo/Desktop/uvc.png")
+#background.draw(win)
+setupButton = Button(win,Point(70,35),16,9,"Setup")
+infoButton = Button(win,Point(30,35),16,9,"Info")
+quitButton = Button(win,Point(95,5),10,8, "quit")
+startButton = Button(win, Point(70,20),16,9,"Start")
+startButton.undraw()
+setupButton.activate()
+infoButton.activate()
+quitButton.activate()
+retakeButton = Button(win, Point(50,20),16,6,"Retake")
+retakeButton.undraw()
+nextButton = Button(win, Point(80,20),16,6,"Next")
+nextButton.undraw()
+pt = Point(0,0)
+
+wksNum = Entry(Point(25,20),10)
+print(wksNum)
+
+#clicked = False
+nextWin = False
+drawn = False
+
+while not (quitButton.isClicked(pt)):
+    pt = win.getMouse()
+    print(pt.getX())
+    print(pt.getY())
+    
+    if setupButton.isClicked(pt):
+        
+        infoButton.undraw()
+        setupButton.undraw()
+        title.undraw()
+        setupText = Text(Point(50,80),"Adjust the camera")
+        setupText.setFill(color_rgb(0,255,200))
+        setupText.setFace("courier")
+        setupText.setStyle("bold")
+        setupText.setSize(30)
+        setupText.draw(win)
+        retakeButton = Button(win, Point(50,20),16,6,"Retake")
+        nextButton = Button(win, Point(80,20),16,6,"Next")
+        retakeButton.activate()
+        nextButton.activate()
+
+
+        camera.capture("img.gif")
+        img = Image.open('img.gif')
+        new_img = img.resize ((427,240))
+        new_img.save('img.gif')
+        wksImg = Image1(Point(50,50),"img.gif")
+        wksImg.draw(win)
+        
+        wksText.draw(win)
+        wksNum.draw(win)
+        
+
+    if retakeButton.isClicked(pt):
+        
+        camera.capture("img.gif")
+        img = Image.open('img.gif')
+        new_img = img.resize ((427,240))
+        new_img.save('img.gif')
+        wksImg = Image1(Point(50,50),"img.gif")
+        wksImg.draw(win)
+
+
+    if nextButton.isClicked(pt):
+        setupText.undraw()
+        retakeButton.undraw()
+        title = Text(Point(50,80),"Click the center of the workstation")
+        title.setSize(20)
+        title.setFill(color_rgb(0,255,200))
+        title.setFace("courier")
+        title.setStyle("bold")
+        title.draw(win)
+        retakeButton.deactivate()
+        setupButton.deactivate()
+        nextButton.undraw()
+        nextWin = True
+        
+        pt = win.getMouse()
+        
+    count = 0
+    W = []
+    #midpoints
+    P = []
+    while (20 < pt.getX() < 80) and (32 < pt.getY() < 67) and nextWin:
+        n = int(wksNum.getText())
+        if drawn:
+            for e in W:
+                e.undraw()
+                print(e)
+            count = 0
+            W.clear()
+            P.clear()
+            drawn = False
+            startButton.deactivate()
+        while count < n and (20 < pt.getX() < 80) and (32 < pt.getY() < 67) :
+            print(count)
+            n = int(wksNum.getText())
+            pt = win.getMouse()
+            img = Image.open('circle.png')
+            new_img = img.resize ((100,100))
+            new_img.save('circle.png')
+            wks = Image1(pt,"circle.png")
+            P.append((21.33*(pt.getX()-20),-(20.57*(pt.getY()-67))))
+            wks.draw(win)
+            W.append(wks)
+            count +=1
+            
+        drawn = True
+        startButton = Button(win, Point(70,20),16,9,"Start")
+        startButton.activate()
+        pt = win.getMouse()
+        
+    if startButton.isClicked(pt):
+        #activate the start button when all circles are drawn
+        break
+    
+    if infoButton.isClicked(pt):
+        
+        #infoImg = Image(Point(50,50),"info.gif")
+        #infoImg.draw(win)
+        gobackButton =Button(win, Point(50,20),16,9,"go back")
+        gobackButton.activate()
+        
+
+
+        while not(gobackButton.isClicked(pt)):
+            pt = win.getMouse()
+            
+        if gobackButton.isClicked(pt):
+            gobackButton.undraw()
+            #infoImg.undraw()
+    
+
+    
+    
+    #continue the rest of the code here
+    #write some status text on top 
+        
+    
+    
+    
+    pt = win.getMouse()
+
+win.close()
+camera.close()
+
+
+
+
+MODEL_NAME = 'Sample_TFLite_model'
+GRAPH_NAME = 'detect.tflite'
+LABELMAP_NAME = 'labelmap.txt'
+min_conf_threshold = 0.5
+resW, resH = '1280x720'.split('x')#'1280x720'.split('x')
+imW, imH = int(resW), int(resH)
+use_TPU = True
+# Import TensorFlow libraries
+# If tflite_runtime is installed, import interpreter from tflite_runtime, else import from regular tensorflow
+# If using Coral Edge TPU, import the load_delegate library
+pkg = importlib.util.find_spec('tflite_runtime')
+if pkg:
+    from tflite_runtime.interpreter import Interpreter
+    if use_TPU:
+        from tflite_runtime.interpreter import load_delegate
+else:
+    from tensorflow.lite.python.interpreter import Interpreter
+    if use_TPU:
+        from tensorflow.lite.python.interpreter import load_delegate
+
+# If using Edge TPU, assign filename for Edge TPU model
+if use_TPU:
+    # If user has specified the name of the .tflite file, use that name, otherwise use default 'edgetpu.tflite'
+    if (GRAPH_NAME == 'detect.tflite'):
+        GRAPH_NAME = 'edgetpu.tflite'
+
+# Get path to current working directory
+CWD_PATH = os.getcwd()
+
+# Path to .tflite file, which contains the model that is used for object detection
+PATH_TO_CKPT = os.path.join(CWD_PATH,MODEL_NAME,GRAPH_NAME)
+
+# Path to label map file
+PATH_TO_LABELS = os.path.join(CWD_PATH,MODEL_NAME,LABELMAP_NAME)
+
+# Load the label map
+with open(PATH_TO_LABELS, 'r') as f:
+    labels = [line.strip() for line in f.readlines()]
+    
+# Have to do a weird fix for label map if using the COCO "starter model" from
+# https://www.tensorflow.org/lite/models/object_detection/overview
+# First label is '???', which has to be removed.
+if labels[0] == '???':
+    del(labels[0])
+
+# Load the Tensorflow Lite model.
+# If using Edge TPU, use special load_delegate argument
+if use_TPU:
+    interpreter = Interpreter(model_path=PATH_TO_CKPT,
+                              experimental_delegates=[load_delegate('libedgetpu.so.1.0')])
+    print(PATH_TO_CKPT)
+else:
+    interpreter = Interpreter(model_path=PATH_TO_CKPT)
+
+interpreter.allocate_tensors()
+
+# Get model details
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+height = input_details[0]['shape'][1]
+width = input_details[0]['shape'][2]
+
+floating_model = (input_details[0]['dtype'] == np.float32)
+
+input_mean = 127.5
+input_std = 127.5
+
+# Initialize frame rate calculation
+frame_rate_calc = 1
+freq = cv2.getTickFrequency()
+
+# Initialize video stream
+videostream = VideoStream(resolution=(imW,imH),framerate=30).start()
+time.sleep(1)
+
+
+
+#This is initialized in the workstation class
+#outlet ID 1,33
+wksID = 1
+outLet = [1,33,64]
+wks =[]
+if len(P) > len(outLet):
+    print('not enough outlets')
+    os.system('quit')
+for x,y in P:
+    wks.append(Workstation(wksID,int(x),int(y),200,(255,0,0),outLet[wksID-1]))
+    wksID += 1
+
+while True:
+    # Start timer (for calculating frame rate)
+    t1 = cv2.getTickCount()
+    # Grab frame from video stream
+    frame1 = videostream.read()
+    # Acquire frame and resize to expected shape [1xHxWx3]
+    frame = frame1.copy()
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame_resized = cv2.resize(frame_rgb, (width, height))
+    input_data = np.expand_dims(frame_resized, axis=0)
+    # Normalize pixel values if using a floating model (i.e. if model is non-quantized)
+    if floating_model:
+        input_data = (np.float32(input_data) - input_mean) / input_std
+    # Perform the actual detection by running the model with the image as input
+    interpreter.set_tensor(input_details[0]['index'], input_data)
+    interpreter.invoke()
+    # Retrieve detection results
+    boxes = interpreter.get_tensor(output_details[0]['index'])[0] # Bounding box coordinates of detected objects
+    classes = interpreter.get_tensor(output_details[1]['index'])[0] # Class index of detected objects
+    scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
+    #num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
+
+    for wk in wks:
+        cv2.circle(frame, (wk.cx,wk.cy), wk.radius, wk.color, 5) # draw circle
+    
+
+    # Loop over all detections and draw detection box if confidence is above minimum threshold
+    for i in range(len(scores)):
+        object_name = 'null'
+        if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0)):
+
+            # Get bounding box coordinates and draw box
+            # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
+            ymin = int(max(1,(boxes[i][0] * imH)))
+            xmin = int(max(1,(boxes[i][1] * imW)))
+            ymax = int(min(imH,(boxes[i][2] * imH)))
+            xmax = int(min(imW,(boxes[i][3] * imW)))
+            ymax = int(ymax/1.25)
+            
+
+            # Draw label
+            object_name = labels[int(classes[i])] # Look up object name from "labels" array using class index
+            # here it's not updating the 'person' label to null or anyother variable so it doesn't go to the else statement
+            
+            if object_name == 'person':
+                
+                cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
+                midx,midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
+                cv2.circle(frame, (midx,midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
+                
+                #Checking for workstation 1
+                #Maybe stop cleaning when the person is detected again
+                for wk in wks:
+                    if wk.radius >= int((((midx-wk.cx)**2) + ((midy-wk.cy)**2))**0.5): # detect if midpoint of person is in circle
+                        wk.action('person') #updates multiple status 'ready': false 'in_use':true 'waited':false 
+                
+             
+                    
+                label = '%s: %d%%' % (object_name, int(scores[i]*100)) # Example: 'person: 72%'
+                labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
+                label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
+                cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
+                
+                cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
+
+
+        if object_name != 'person':
+            for wk in wks:
+                wk.action('no_person')
+        
+        #checks if the person is not there and updates status 'in_wait': true  then starts the wait thread
+        for wk in wks:
+            wk.action('wait')
+
+            
+        #-------------------------------------------------------#
+        #double check to see if the person re-enters  <-would there be a better way to code for this part?
+
+        for wk in wks:
+            if wk.getStatus('waited'):   
+                wk.update('ready',True)
+                for i in range(len(scores)):
+                    if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0) and (labels[int(classes[i])] == 'person')):
+                        #print("Person has re-entered room----------"+str(wk.name))
+                        ymin = int(max(1,(boxes[i][0] * imH)))
+                        xmin = int(max(1,(boxes[i][1] * imW)))
+                        ymax = int(min(imH,(boxes[i][2] * imH)))
+                        xmax = int(min(imW,(boxes[i][3] * imW)))
+                        ymax = int(ymax/1.25)
+
+                        #what if we don't have new mid?
+                        midx, midy = int((xmax+xmin)/2), int((ymax+ymin)/2) # get mid points of bounding boxes
+                        cv2.circle(frame, (midx,midy), radius=1, color=(0, 0, 0), thickness=3) # draw midpoint
+                                
+                        if wk.radius >= int((((midx-wk.cx)**2) + ((midy-wk.cy)**2))**0.5):
+                            wk.action('person')
+        
+
+        
+        for wk in wks:
+            wk.action('clean')
+    
+    # Draw framerate in corner of frame
+    cv2.putText(frame,'FPS: {0:.2f}'.format(frame_rate_calc),(30,50),cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,0),2,cv2.LINE_AA)
+
+    # All the results have been drawn on the frame, so it's time to display it.
+    cv2.imshow('Object detector', frame)
+
+    # Calculate framerate
+    t2 = cv2.getTickCount()
+    time1 = (t2-t1)/freq
+    frame_rate_calc= 1/time1
+
+    # Press 'q' to quit
+    if cv2.waitKey(1) == ord('q'):
+        break
+    
+    print('wsk2**'+wks[1].getAllStatus())
+# Clean up
+cv2.destroyAllWindows()
+videostream.stop()
+
+
